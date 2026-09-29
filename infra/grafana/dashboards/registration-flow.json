@@ -1,0 +1,28 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {"type":"timeseries","title":"Registration rate","id":1,"gridPos":{"h":8,"w":8,"x":0,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(registrations_total{result=\"success\"}[5m]))","legendFormat":"success / sec","refId":"A"}]},
+    {"type":"timeseries","title":"API errors","id":2,"gridPos":{"h":8,"w":8,"x":8,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum by (result) (rate(registrations_total{result!=\"success\"}[5m]))","legendFormat":"{{result}}","refId":"A"}]},
+    {"type":"stat","title":"Pending outbox","id":3,"gridPos":{"h":8,"w":4,"x":16,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"outbox_pending_events","refId":"A"}]},
+    {"type":"stat","title":"DLQ messages","id":4,"gridPos":{"h":8,"w":4,"x":20,"y":0},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(dlq_messages_total)","refId":"A"}]},
+    {"type":"timeseries","title":"Consumer outcomes","id":5,"gridPos":{"h":8,"w":12,"x":0,"y":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum by (service, result) (rate(kafka_messages_consumed_total[5m]))","legendFormat":"{{service}} / {{result}}","refId":"A"}]},
+    {"type":"timeseries","title":"Email and statistics","id":6,"gridPos":{"h":8,"w":12,"x":12,"y":8},"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"rate(notifications_sent_total[5m])","legendFormat":"emails","refId":"A"},{"expr":"rate(statistics_events_saved_total[5m])","legendFormat":"statistics","refId":"B"}]},
+    {"type":"logs","title":"Flow by trace_id","id":7,"gridPos":{"h":9,"w":12,"x":0,"y":16},"datasource":{"type":"loki","uid":"loki"},"targets":[{"expr":"{service=~\"auth-service|notification-service|statistics-service\"} | json | trace_id=\"$trace_id\"","refId":"A"}]},
+    {"type":"logs","title":"Errors, retries and DLQ (15m)","id":8,"gridPos":{"h":9,"w":12,"x":12,"y":16},"datasource":{"type":"loki","uid":"loki"},"targets":[{"expr":"{service=~\".+\"} | json | level=\"ERROR\" |~ \"retry|failed|DLQ|unavailable\"","refId":"A"}],"timeFrom":"15m"},
+    {"type":"logs","title":"Statistics logs by event_id","id":9,"gridPos":{"h":8,"w":24,"x":0,"y":25},"datasource":{"type":"loki","uid":"loki"},"targets":[{"expr":"{service=\"statistics-service\"} | json | event_id=\"$event_id\"","refId":"A"}]}
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["qa-lab", "microservices"],
+  "templating": {"list":[
+    {"name":"trace_id","label":"trace_id","type":"textbox","query":"","current":{"text":"","value":""}},
+    {"name":"event_id","label":"event_id","type":"textbox","query":"","current":{"text":"","value":""}}
+  ]},
+  "time": {"from":"now-15m","to":"now"},
+  "timezone": "browser",
+  "title": "Registration flow",
+  "uid": "registration-flow",
+  "version": 1
+}

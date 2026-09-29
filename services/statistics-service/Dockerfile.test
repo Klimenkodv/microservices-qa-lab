@@ -1,0 +1,9 @@
+FROM python:3.12.7-slim
+WORKDIR /app
+COPY services/statistics-service/requirements.txt /tmp/service-requirements.txt
+COPY tests/requirements.txt /tmp/test-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/service-requirements.txt -r /tmp/test-requirements.txt
+COPY shared /app/shared
+COPY services/statistics-service/app /app/app
+COPY tests/api/test_statistics_idempotency.py /app/tests/
+CMD ["pytest", "-q", "/app/tests"]
