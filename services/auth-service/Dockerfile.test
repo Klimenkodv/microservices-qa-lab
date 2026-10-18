@@ -5,5 +5,5 @@ COPY tests/requirements.txt /tmp/test-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/service-requirements.txt -r /tmp/test-requirements.txt
 COPY shared /app/shared
 COPY services/auth-service/app /app/app
-COPY tests/api/test_auth_unit.py tests/api/test_event_contract.py /app/tests/
-CMD ["pytest", "-q", "/app/tests"]
+COPY tests/api/test_auth_unit.py tests/api/test_event_contract.py tests/api/test_profile_gateway.py /app/tests/
+CMD ["python", "-m", "pytest", "-q", "/app/tests"]

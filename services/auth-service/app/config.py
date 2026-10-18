@@ -8,6 +8,8 @@ class Settings:
     kafka_topic = os.getenv("KAFKA_TOPIC", "user.registered.v1")
     jwt_secret = os.getenv("JWT_SECRET", "local-demo-secret-change-me")
     jwt_ttl_seconds = int(os.getenv("JWT_TTL_SECONDS", "3600"))
+    profile_grpc_target = os.getenv("PROFILE_GRPC_TARGET", "profile-service:50051")
+    profile_grpc_timeout = float(os.getenv("PROFILE_GRPC_TIMEOUT", "2"))
     demo_mode = os.getenv("DEMO_MODE", "true").lower() == "true"
     cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")]
 

@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import grpc
+from google.protobuf.json_format import MessageToDict
 from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -19,10 +21,11 @@ from starlette.responses import Response
 
 from shared.events import UserRegisteredEvent, kafka_headers
 from shared.observability import configure_logging, install_http_middleware, trace_id_var
+from shared.proto import profile_pb2 as profile_pb, profile_pb2_grpc as profile_rpc
 
 from . import database
 from .config import settings
-from .models import RegisterRequest, RegisterResponse, UserResponse
+from .models import ProfileResponse, ProfileUpdate, RegisterRequest, RegisterResponse, UserResponse
 
 logger = configure_logging(settings.service_name)
 passwords = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -82,6 +85,8 @@ async def outbox_publisher(stop: asyncio.Event) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_database()
+    channel = grpc.aio.insecure_channel(settings.profile_grpc_target)
+    app.state.profile_stub = profile_rpc.ProfileServiceStub(channel)
     stop = asyncio.Event()
     task = asyncio.create_task(outbox_publisher(stop))
     app.state.stop = stop
@@ -90,6 +95,7 @@ async def lifespan(app: FastAPI):
     stop.set()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+    await channel.close()
 
 
 app = FastAPI(title="QA Lab Auth Service", version="1.0.0", lifespan=lifespan)
@@ -97,7 +103,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Trace-ID"],
     expose_headers=["X-Trace-ID"],
 )
@@ -110,7 +116,8 @@ def error_payload(code: str, message: str, status: int) -> JSONResponse:
 
 @app.exception_handler(RequestValidationError)
 async def validation_handler(_request: Request, exc: RequestValidationError):
-    REGISTRATIONS.labels("validation_error").inc()
+    if _request.url.path == "/api/v1/register":
+        REGISTRATIONS.labels("validation_error").inc()
     details = []
     for error in exc.errors():
         field = str(error["loc"][-1])
@@ -149,6 +156,13 @@ async def register(payload: RegisterRequest):
 
 @app.get("/api/v1/me", response_model=UserResponse)
 async def me(authorization: str | None = Header(default=None)):
+    user = await authenticated_user(authorization)
+    if isinstance(user, JSONResponse):
+        return user
+    return UserResponse(user_id=user["id"], email=user["email"], created_at=user["created_at"])
+
+
+async def authenticated_user(authorization):
     if not authorization or not authorization.startswith("Bearer "):
         return error_payload("UNAUTHORIZED", "A valid bearer token is required", 401)
     try:
@@ -158,7 +172,41 @@ async def me(authorization: str | None = Header(default=None)):
             raise ValueError("User not found")
     except Exception:
         return error_payload("UNAUTHORIZED", "The access token is invalid or expired", 401)
-    return UserResponse(user_id=user["id"], email=user["email"], created_at=user["created_at"])
+    return user
+
+
+async def call_profile(method: str, authorization: str | None, changes=None):
+    user = await authenticated_user(authorization)
+    if isinstance(user, JSONResponse):
+        return user
+    request = (profile_pb.GetProfileRequest(user_id=user["id"]) if changes is None
+               else profile_pb.UpdateProfileRequest(user_id=user["id"], **changes))
+    try:
+        response = await getattr(app.state.profile_stub, method)(
+            request, timeout=settings.profile_grpc_timeout,
+            metadata=(("authorization", authorization), ("x-trace-id", trace_id_var.get())))
+        return MessageToDict(response, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+    except grpc.aio.AioRpcError as exc:
+        logger.warning("Profile RPC failed", extra={"user_id": user["id"], "error_type": exc.code().name})
+        status, code, message = {
+            grpc.StatusCode.NOT_FOUND: (404, "PROFILE_NOT_READY", "Profile is not created yet. Retry shortly."),
+            grpc.StatusCode.INVALID_ARGUMENT: (400, "INVALID_PROFILE", exc.details()),
+            grpc.StatusCode.UNAVAILABLE: (503, "PROFILE_UNAVAILABLE", "Profile service is unavailable"),
+            grpc.StatusCode.DEADLINE_EXCEEDED: (504, "PROFILE_TIMEOUT", "Profile service response timed out"),
+            grpc.StatusCode.UNAUTHENTICATED: (401, "UNAUTHORIZED", "A valid bearer token is required"),
+            grpc.StatusCode.PERMISSION_DENIED: (403, "FORBIDDEN", "Profile access denied"),
+        }.get(exc.code(), (502, "PROFILE_ERROR", "Profile service failed"))
+        return error_payload(code, message, status)
+
+
+@app.get("/api/v1/profile", response_model=ProfileResponse)
+async def get_profile(authorization: str | None = Header(default=None)):
+    return await call_profile("GetProfile", authorization)
+
+
+@app.patch("/api/v1/profile", response_model=ProfileResponse)
+async def update_profile(payload: ProfileUpdate, authorization: str | None = Header(default=None)):
+    return await call_profile("UpdateProfile", authorization, payload.model_dump(exclude_unset=True))
 
 
 @app.get("/health")

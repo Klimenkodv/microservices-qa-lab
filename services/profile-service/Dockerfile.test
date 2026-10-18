@@ -1,0 +1,12 @@
+FROM python:3.12.7-slim
+WORKDIR /app
+COPY tests/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY services/profile-service/requirements.txt /tmp/profile-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/profile-requirements.txt
+COPY shared /app/shared
+COPY services/profile-service/app /app/app
+COPY tests/api/test_profile_service.py /app/tests/test_profile_service.py
+COPY pytest.ini /app/pytest.ini
+ENV PYTHONPATH=/app
+CMD ["python", "-m", "pytest", "tests", "-q"]

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Activity, CalendarDays, Check, Copy, LogOut, Mail, UserRound } from 'lucide-react'
 import { ErrorModal } from '../components/ErrorModal/ErrorModal'
+import { ProfileEditor } from '../components/ProfileEditor/ProfileEditor'
 import { useAuth } from '../hooks/useAuth'
 import { ApiError } from '../types/api'
 
@@ -25,13 +26,13 @@ export function ProfilePage() {
   async function copyId() { await navigator.clipboard.writeText(auth.user!.user_id); setCopied(true); window.setTimeout(() => setCopied(false), 1500) }
   return <main className="profileLayout">
     <header className="profileHeader"><div className="brand dark"><span className="brandMark"><Activity size={22} /></span><span>QA Flow Lab</span></div><button className="secondaryButton" onClick={() => { auth.logout(); navigate('/register', { replace: true }) }}><LogOut size={17} /> Выйти</button></header>
-    <section className="profileContent"><div className="successBadge"><Check size={18} /> Регистрация завершена</div><h1>Личный кабинет</h1><p className="lead">Профиль получен из auth-service по сохранённому access token.</p>
+    <section className="profileContent"><div className="successBadge"><Check size={18} /> Регистрация завершена</div><h1>Личный кабинет</h1><p className="lead">Учётная запись</p>
       <div className="profileCard"><div className="avatar"><UserRound size={30} /></div><div className="profileIdentity"><span>Пользователь</span><strong>{auth.user.email}</strong></div><dl>
         <div><dt><Mail size={16} /> Email</dt><dd>{auth.user.email}</dd></div>
         <div><dt><CalendarDays size={16} /> Создан</dt><dd>{createdAt}</dd></div>
         <div><dt><UserRound size={16} /> User ID</dt><dd><code>{auth.user.user_id}</code><button className="iconButton" onClick={copyId} aria-label="Скопировать User ID">{copied ? <Check size={17} /> : <Copy size={17} />}</button></dd></div>
       </dl></div>
-      <div className="nextSteps"><h2>Что произошло дальше</h2><div className="statusGrid"><div><span className="statusDot" /><strong>Событие опубликовано</strong><small>user.registered.v1</small></div><div><span className="statusDot waiting" /><strong>Обработка асинхронна</strong><small>Проверьте Kafka UI и Mailpit</small></div></div></div>
+      {auth.token && <ProfileEditor token={auth.token} />}
     </section>
   </main>
 }

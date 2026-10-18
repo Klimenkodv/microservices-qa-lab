@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -33,3 +33,25 @@ class UserResponse(BaseModel):
 class RegisterResponse(UserResponse):
     access_token: str
     token_type: str = "bearer"
+
+
+class ProfileResponse(BaseModel):
+    user_id: str
+    first_name: str
+    last_name: str
+    birth_date: str
+    city: str
+    description: str
+    country: str
+    created_at: str
+    updated_at: str
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: str = Field(default="", max_length=100)
+    last_name: str = Field(default="", max_length=100)
+    birth_date: str = ""
+    city: str = Field(default="", max_length=100)
+    description: str = Field(default="", max_length=2000)
+    country: str = Field(default="", max_length=100)

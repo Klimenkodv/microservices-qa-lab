@@ -1,6 +1,8 @@
 # Microservices QA Lab
 
-Локальный учебный стенд показывает полный путь регистрации через REST API, transactional outbox, Kafka и два независимых consumer-сервиса. Настоящие внешние интеграции не используются: письма остаются в локальном Mailpit.
+Локальный учебный стенд показывает полный путь регистрации через REST API, transactional outbox, Kafka и три независимых consumer-сервиса. Profile Service создаёт профиль по Kafka-событию, а Auth читает и обновляет его по gRPC. Настоящие внешние интеграции не используются: письма остаются в локальном Mailpit.
+
+Подробная инструкция нового сервиса, схема БД и практика Postman: [Profile Service: gRPC и Protobuf](docs/profile-service.md).
 
 ## Быстрый старт
 
@@ -28,14 +30,43 @@ curl -fsS http://localhost:8002/ready
 | Auth Swagger | http://localhost:8000/docs | REST API и demo endpoint |
 | Notification Swagger | http://localhost:8001/docs | Consumer и fault injection |
 | Statistics Swagger | http://localhost:8002/docs | Consumer и fault injection |
+| Profile Operations | http://localhost:8003/docs | Health, metrics, задержка gRPC и пауза consumer |
+| Profile gRPC | `localhost:50051` | `qa.profile.v1.ProfileService`, Postman, без TLS в локальном стенде |
 | Kafka UI | http://localhost:8080 | Топики, события, groups и lag |
 | Mailpit | http://localhost:8025 | Перехваченные письма |
 | Grafana | http://localhost:3000 | `admin` / `admin`, dashboard `Registration flow` |
 | Prometheus | http://localhost:9090 | Метрики и targets |
 | auth.db | http://localhost:8085 | Read-only SQLite UI |
 | statistics.db | http://localhost:8086 | Read-only SQLite UI |
+| profile.db | http://localhost:8087 | Read-only SQLite UI профилей |
 
-Файлы `data/auth.db`, `data/notifications.db` и `data/statistics.db` также можно открыть в DBeaver. Все контейнеры обращаются друг к другу по DNS-именам Compose (`kafka`, `mailpit`), а не через `localhost`.
+Файлы `data/auth.db`, `data/notifications.db`, `data/statistics.db` и `data/profile.db` также можно открыть в DBeaver. Все контейнеры обращаются друг к другу по DNS-именам Compose (`kafka`, `mailpit`, `profile-service`), а не через `localhost`.
+
+## Обновление существующего стенда
+
+После получения обновлений репозитория выполните из корня проекта:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+Не удаляйте `data` и не запускайте `make clean` для обновления. Profile Service создаст собственную БД автоматически. Для старых пользователей профиль появится только если событие регистрации ещё доступно в Kafka и новая группа его прочитает. При отсутствии истории используйте новую регистрацию для занятия. Данные Auth автоматически в Profile не копируются.
+
+```mermaid
+flowchart LR
+  Browser[React] -->|REST register| Auth
+  Auth --> AuthDB[(auth.db: users + outbox)]
+  Auth -->|outbox publisher| Kafka
+  Kafka -->|notification-service-group| Notification
+  Kafka -->|statistics-service-group| Statistics
+  Kafka -->|profile-service-group| Profile
+  Notification --> Mailpit
+  Statistics --> StatisticsDB[(statistics.db)]
+  Profile --> ProfileDB[(profile.db)]
+  Browser -->|REST GET/PATCH profile| Auth
+  Auth -->|gRPC GetProfile/UpdateProfile| Profile
+```
 
 ## Успешная регистрация
 
@@ -123,17 +154,19 @@ Fault endpoint вооружает ровно три ошибки обработ�
 5. Если lag нулевой, но результата нет, проверьте ERROR/retry/DLQ panel и топик `user.registered.dlq.v1`.
 6. Для письма сопоставьте `event_id` с `sent_notifications`; для статистики — с `processed_events`.
 
+7. Для профиля проверьте `profile-service-group`, `profile.db` и `GET /api/v1/profile` с Bearer token. `404 PROFILE_NOT_READY` означает отсутствие профиля, `503 PROFILE_UNAVAILABLE` — недоступность gRPC, `504 PROFILE_TIMEOUT` — превышение deadline. Учётная запись при этом не удаляется.
+
 Типовые границы: нет пользователя — auth/validation; пользователь есть, outbox не опубликован — Kafka publisher; статистика есть, письма нет — notification/SMTP; письмо есть, статистики нет — statistics/SQLite.
 
 ## Метрики и логи
 
-Prometheus опрашивает `/metrics` трёх сервисов каждые 5 секунд. Grafana автоматически получает datasources Prometheus и Loki и dashboard со скоростью регистраций, ошибками API, outbox, результатами consumer-ов, DLQ и log panels.
+Prometheus опрашивает `/metrics` четырёх сервисов каждые 5 секунд. Grafana автоматически получает datasources Prometheus и Loki и dashboard со скоростью регистраций, ошибками API, outbox, результатами consumer-ов, DLQ и log panels. Метрики Profile: `grpc_server_requests_total{method,status}`, `grpc_server_duration_seconds`, `profiles_created_events_total`; их можно исследовать через Explore/PromQL. Логи gRPC доступны в Loki по `{service="profile-service"}`.
 
 Сервисы пишут JSON только в stdout. Обязательные correlation-поля присутствуют в каждой прикладной записи. Пароль, password hash, access token и полное тело запроса не логируются. Stack trace включён только при `ENVIRONMENT=development`.
 
 ## Тесты
 
-В проекте 23 автотеста: backend validation/outbox/event contract/idempotency, frontend form/modal components и Docker-dependent integration всей цепочки до consumer-БД.
+Автотесты покрывают backend validation/outbox/event contract/idempotency, настоящий gRPC transport и reflection, авторизацию и deadlines, frontend form/modal/profile components и Docker-dependent integration.
 
 ```bash
 make test-backend

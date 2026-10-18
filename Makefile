@@ -19,6 +19,8 @@ test-backend:
 	docker run --rm qa-lab-notification-tests
 	docker build -f services/statistics-service/Dockerfile.test -t qa-lab-statistics-tests .
 	docker run --rm qa-lab-statistics-tests
+	docker build -f services/profile-service/Dockerfile.test -t qa-lab-profile-tests .
+	docker run --rm qa-lab-profile-tests
 
 test-frontend:
 	docker run --rm -v "$(CURDIR)/frontend:/app" -w /app node:22.11.0-alpine sh -c "npm ci --no-audit --no-fund && npm test"
